@@ -696,7 +696,8 @@ int ObExpr::do_eval_batch(ObEvalCtx &ctx,
     } else {
       ret = (*eval_batch_func_)(*this, ctx, skip, size);
       if (OB_SUCC(ret)) {
-      } else {
+      } else if (type_ != T_FUN_SYS_AI_EMBED) {
+        // AI_EMBED publishes datums and flags only after the entire batch succeeds.
         ObDatum *datum = reinterpret_cast<ObDatum *>(frame + datum_off_);
         ObDatum *datum_end = datum + size;
         for (; datum < datum_end; datum += 1) {
