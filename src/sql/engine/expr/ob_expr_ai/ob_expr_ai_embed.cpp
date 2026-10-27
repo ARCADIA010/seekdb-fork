@@ -81,11 +81,12 @@ int ObExprAIEmbed::eval_ai_embed(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &re
   ObDatum *arg_model_id = nullptr;
   ObDatum *arg_content = nullptr;
   ObDatum *arg_dim = nullptr;
-  if (expr.arg_cnt_ == 3 ? OB_FAIL(expr.eval_param_value(ctx, arg_model_id, arg_content, arg_dim))
-                         : OB_FAIL(expr.eval_param_value(ctx, arg_model_id, arg_content))) {
+  if (OB_FAIL(expr.args_[CONTENT_IDX]->eval(ctx, arg_content))) {
   } else if (arg_content->is_null()) {
-    // NULL content never needs endpoint resolution or an embedding request.
+    // Match batch evaluation: NULL content also skips model/dimension expressions.
     res.set_null();
+  } else if (OB_FAIL(expr.args_[MODEL_IDX]->eval(ctx, arg_model_id))) {
+  } else if (expr.arg_cnt_ == 3 && OB_FAIL(expr.args_[DIM_IDX]->eval(ctx, arg_dim))) {
   } else if (arg_model_id->is_null() || (OB_NOT_NULL(arg_dim) && arg_dim->is_null())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_USER_ERROR(OB_INVALID_ARGUMENT, "ai_embed, model id or dimension is null");
