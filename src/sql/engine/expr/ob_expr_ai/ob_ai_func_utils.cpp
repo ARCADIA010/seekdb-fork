@@ -70,19 +70,23 @@ int ObOpenAIUtils::ObOpenAIComplete::get_body(common::ObIAllocator &allocator,
                                               common::ObJsonObject *&body) 
 {
   int ret = OB_SUCCESS;
+  body = nullptr;
   if (model.empty() || content.empty()) {
+    ret = OB_INVALID_ARGUMENT;
+  } else if (OB_NOT_NULL(config) && config->json_type() != ObJsonNodeType::J_OBJECT) {
     ret = OB_INVALID_ARGUMENT;
   } else {
     // {"model": "*", "messages": [{"role": "system", "content": "*"}, {"role": "user", "content": "*"}]}
     ObJsonObject *body_obj = nullptr;
     ObJsonString *model_str = nullptr;
     ObJsonArray *messages_array = nullptr;
+    // Preserve config values and their JSON types; model/messages come from the caller.
     if (OB_FAIL(ObAIFuncJsonUtils::get_json_object(allocator, body_obj))) {
+    } else if (OB_FAIL(ObAIFuncJsonUtils::compact_json_object(allocator, config, body_obj))) {
     } else if (OB_FAIL(ObAIFuncJsonUtils::get_json_string(allocator, model, model_str))) {
     } else if (OB_FAIL(body_obj->add("model", model_str))) {
     } else if (OB_FAIL(construct_messages_array(allocator, prompt, content, messages_array))) {
     } else if (OB_FAIL(body_obj->add("messages", messages_array))) {
-    } else if (OB_FAIL(ObAIFuncJsonUtils::compact_json_object(allocator, config, body_obj))) {
     } else {
       body = body_obj;
     }
@@ -164,20 +168,33 @@ int ObOpenAIUtils::ObOpenAIComplete::parse_output(common::ObIAllocator &allocato
                                                   common::ObIJsonBase *&result) 
 {
   int ret = OB_SUCCESS;
+  UNUSED(allocator);
+  result = nullptr;
+  ObJsonNode *choices = nullptr;
+  ObJsonNode *choice = nullptr;
+  ObJsonNode *message = nullptr;
+  ObJsonNode *content = nullptr;
   if (OB_ISNULL(http_response)) {
     ret = OB_INVALID_ARGUMENT;
+  } else if (http_response->json_type() != ObJsonNodeType::J_OBJECT
+             || OB_NOT_NULL(http_response->get_value("error"))) {
+    ret = OB_INVALID_DATA;
+  } else if (OB_ISNULL(choices = http_response->get_value("choices"))
+             || choices->json_type() != ObJsonNodeType::J_ARRAY
+             || choices->element_count() == 0) {
+    ret = OB_INVALID_DATA;
+  } else if (OB_ISNULL(choice = static_cast<ObJsonArray *>(choices)->get_value(0))
+             || choice->json_type() != ObJsonNodeType::J_OBJECT) {
+    ret = OB_INVALID_DATA;
+  } else if (OB_ISNULL(message = static_cast<ObJsonObject *>(choice)->get_value("message"))
+             || message->json_type() != ObJsonNodeType::J_OBJECT) {
+    ret = OB_INVALID_DATA;
+  } else if (OB_ISNULL(content = static_cast<ObJsonObject *>(message)->get_value("content"))
+             || content->json_type() != ObJsonNodeType::J_STRING
+             || static_cast<ObJsonString *>(content)->value().empty()) {
+    ret = OB_INVALID_DATA;
   } else {
-    ObIJsonBase *j_tree = http_response;
-    common::ObString path_text("$.choices[0].message.content");
-    ObJsonPath j_path(path_text, &allocator);
-    ObJsonSeekResult hit;
-    if (OB_FAIL(j_path.parse_path())) {
-    } else if (OB_FAIL(j_tree->seek(j_path, j_path.path_node_cnt(), false, false, hit))) {
-    } else if (hit.size() == 0) {
-      ret = OB_INVALID_DATA;
-    } else {
-      result = hit[0];
-    }
+    result = content;
   }
   return ret;
 }
